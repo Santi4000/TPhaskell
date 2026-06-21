@@ -18,35 +18,75 @@ tokenizar (x:xs)
         in Num (read y :: Float) : tokenizar ys
     | otherwise = Op x : tokenizar xs
 
--- Devuelve la precedencia de un operador (mayor número = mayor precedencia)
+
 precedencia :: Char -> Int
+precedencia '+' = 1
+precedencia '-' = 1
+precedencia '*' = 2
+precedencia '/' = 2
+precedencia '^' = 3
+precedencia _   = 0  
 
--- Indica si un operador es asociativo por izquierda (relevante para desempate de precedencia igual)
+
 esAsociativaIzquierda :: Char -> Bool
+esAsociativaIzquierda '+' = True
+esAsociativaIzquierda '-' = True
+esAsociativaIzquierda '*' = True
+esAsociativaIzquierda '/' = True
+esAsociativaIzquierda '^' = False
+esAsociativaIzquierda _ = False
 
--- Distingue si un Token es un operador o un número (útil en el procesamiento)
+
 esOperador :: Token -> Bool
+esOperador (Op _) = True
+esOperador _ = False
 
--- Dado un operador y dos árboles (operando derecho e izquierdo, en ese orden de pop),
--- construye el Nodo correspondiente: Nodo (Op c) izq der
+
 aplicarOperador :: Char -> Arbol Token -> Arbol Token -> Arbol Token
+aplicarOperador oper izq der = Nodo (Op oper) izq der
 
--- Toma la pila de operadores y la pila de árboles (salida), y aplica el operador
--- en el tope de la pila de operadores sobre los dos árboles en el tope de la pila de salida,
--- devolviendo las pilas actualizadas (la de operadores con uno menos, la de salida con el nuevo árbol)
+
 aplicarTope :: Pila Char -> Pila (Arbol Token) -> (Pila Char, Pila (Arbol Token))
+aplicarTope (PTop op ops) (PTop der (PTop izq salida)) = (ops, PTop (aplicarOperador op izq der) salida)
 
--- Procesa un solo Token actualizando ambas pilas según las reglas de shunting yard:
--- - si es Num, lo empuja como hoja (Nodo) en la pila de salida
--- - si es Op '(' , lo empuja en la pila de operadores
--- - si es Op ')' , va aplicando operadores hasta encontrar el '(' y lo descarta
--- - si es otro operador, aplica los operadores de mayor o igual precedencia 
---   (según asociatividad) antes de empujarlo
-procesarToken :: Token -> Pila Char -> Pila (Arbol Token) -> (Pila Char, Pila (Arbol Token))
 
--- Recorre la lista de tokens aplicando procesarToken, acumulando el estado de ambas pilas
 procesarTokens :: [Token] -> Pila Char -> Pila (Arbol Token) -> (Pila Char, Pila (Arbol Token))
+procesarTokens [] ops salida = (ops, salida)
+procesarTokens (t:ts) ops salida =
+    let (ops', salida') = procesarToken t ops salida
+    in procesarTokens ts ops' salida'
 
--- Al terminar de procesar todos los tokens, vacía la pila de operadores restante,
--- aplicando cada uno sobre la pila de salida, hasta dejar un único árbol final
+
+procesarToken :: Token -> Pila Char -> Pila (Arbol Token) -> (Pila Char, Pila (Arbol Token))
+procesarToken (Num n) ops salida = (ops, PTop (Nodo (Num n) Vacio Vacio) salida)
+procesarToken (Op '(') ops salida = (push '(' ops, salida)
+procesarToken (Op ')') ops salida =
+    let (ops', salida') = vaciarMientras (/= '(') ops salida    
+    in case ops' of
+        PTop '(' ops'' -> (ops'', salida')
+        _ -> error "Paréntesis desbalanceados"
+procesarToken (Op op) ops salida =
+    let (ops', salida') = vaciarMientras (\o -> esOperador (Op o) && (precedencia o > precedencia op || (precedencia o == precedencia op && esAsociativaIzquierda op))) ops salida
+    in (push op ops', salida')
+
+
+vaciarMientras :: (Char -> Bool) -> Pila Char -> Pila (Arbol Token) -> (Pila Char, Pila (Arbol Token))
+vaciarMientras cond (PTop op ops) salida
+    | cond op =
+        let (ops', salida') = aplicarTope (PTop op ops) salida
+        in vaciarMientras cond ops' salida'
+vaciarMientras _ ops salida = (ops, salida)
+
+
 vaciarOperadores :: Pila Char -> Pila (Arbol Token) -> Arbol Token
+vaciarOperadores (PTop op ops) salida =
+    let (ops', salida') = aplicarTope (PTop op ops) salida
+    in vaciarOperadores ops' salida'
+vaciarOperadores _ (PTop arbol _) = arbol
+
+
+shuntingYard :: String -> Arbol Token
+shuntingYard entrada =
+    let tokens = tokenizar entrada
+        (opsFinal, salidaFinal) = procesarTokens tokens empty empty
+    in vaciarOperadores opsFinal salidaFinal
