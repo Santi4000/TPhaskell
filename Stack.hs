@@ -14,8 +14,7 @@ instance Stack Pila where
     empty = PEmpty
     push a p = PTop a p
     top (PTop a _) = a
-    top PEmpty = error "Stack vacía"
+    top PEmpty = PEmpty
     pop (PTop _ p) = p
-    pop PEmpty = error "Stack vacía"
     isEmpty PEmpty = True
     isEmpty _ = False
